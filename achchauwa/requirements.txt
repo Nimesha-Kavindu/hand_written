@@ -1,0 +1,8 @@
+numpy
+matplotlib
+scikit-learn
+Pillow
+seaborn
+tensorflow
+extra-keras-datasets
+scipy
