@@ -40,9 +40,12 @@ class HandwritingRecognitionApp:
         
     def load_model(self):
         """Load the trained CNN model"""
+        # Get the directory where this script is located
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
         # Try CNN model first (recommended)
-        cnn_model_path = "models/cnn_model.h5"
-        knn_model_path = "models/knn_model.pkl"
+        cnn_model_path = os.path.join(script_dir, "models", "cnn_model.h5")
+        knn_model_path = os.path.join(script_dir, "models", "knn_model.pkl")
         
         if os.path.exists(cnn_model_path):
             try:
@@ -52,7 +55,7 @@ class HandwritingRecognitionApp:
                 
                 # Load metadata if available
                 import json
-                metadata_path = "models/cnn_model_metadata.json"
+                metadata_path = os.path.join(script_dir, "models", "cnn_model_metadata.json")
                 if os.path.exists(metadata_path):
                     with open(metadata_path, 'r') as f:
                         metadata = json.load(f)
@@ -70,7 +73,7 @@ class HandwritingRecognitionApp:
                 print("KNN Model loaded successfully!")
                 
                 # Load metadata if available
-                metadata_path = "models/model_metadata.pkl"
+                metadata_path = os.path.join(script_dir, "models", "model_metadata.pkl")
                 if os.path.exists(metadata_path):
                     with open(metadata_path, 'rb') as f:
                         metadata = pickle.load(f)
