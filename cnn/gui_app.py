@@ -1,31 +1,22 @@
 """
 Handwritten Character Recognition GUI
-Using CNN model and Tkinter Canvas for drawing
-
-This application allows users to draw digits/letters and get predictions
-from the trained CNN model.
+Using Tkinter Canvas for drawing.
+Decoupled from model logic.
 """
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
-import pickle
-import os
-import tensorflow as tf
-from tensorflow import keras
-
 
 class HandwritingRecognitionApp:
-    def __init__(self, root):
+    def __init__(self, root, prediction_callback=None):
         self.root = root
         self.root.title("Handwritten Character Recognition")
         self.root.geometry("800x850")
         self.root.resizable(True, True)
         
-        # Load the trained model
-        self.model = None
-        self.load_model()
+        self.prediction_callback = prediction_callback
         
         # Drawing variables
         self.canvas_size = 400
@@ -38,62 +29,29 @@ class HandwritingRecognitionApp:
         # Create GUI
         self.create_widgets()
         
-    def load_model(self):
-        """Load the trained CNN model"""
-        # Get the directory where this script is located
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Try CNN model first (recommended)
-        cnn_model_path = os.path.join(script_dir, "models", "cnn_model.h5")
-        knn_model_path = os.path.join(script_dir, "models", "knn_model.pkl")
-        
-        if os.path.exists(cnn_model_path):
-            try:
-                self.model = keras.models.load_model(cnn_model_path)
-                self.model_type = 'CNN'
-                print("CNN Model loaded successfully!")
-                
-                # Load metadata if available
-                import json
-                metadata_path = os.path.join(script_dir, "models", "cnn_model_metadata.json")
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, 'r') as f:
-                        metadata = json.load(f)
-                    print(f"Model metadata: {metadata}")
-                return
-            except Exception as e:
-                print(f"Failed to load CNN model: {str(e)}")
-        
-        # Fallback to KNN model
-        if os.path.exists(knn_model_path):
-            try:
-                with open(knn_model_path, 'rb') as f:
-                    self.model = pickle.load(f)
-                self.model_type = 'KNN'
-                print("KNN Model loaded successfully!")
-                
-                # Load metadata if available
-                metadata_path = os.path.join(script_dir, "models", "model_metadata.pkl")
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, 'rb') as f:
-                        metadata = pickle.load(f)
-                    print(f"Model metadata: {metadata}")
-                return
-            except Exception as e:
-                print(f"Failed to load KNN model: {str(e)}")
-        
-        # No model found
-        messagebox.showerror(
-            "Error", 
-            f"Model file not found.\nPlease train the model first.\nLooking for: {cnn_model_path} or {knn_model_path}"
-        )
-        self.model_type = None
-    
     def create_widgets(self):
-        """Create all GUI widgets"""
-        # Main container
-        main_frame = tk.Frame(self.root, bg="#f0f0f0")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        """Create all GUI widgets with scrollbar"""
+        # Main container for canvas and scrollbar
+        container = tk.Frame(self.root, bg="#f0f0f0")
+        container.pack(fill=tk.BOTH, expand=True)
+        
+        # Create canvas
+        self.main_canvas = tk.Canvas(container, bg="#f0f0f0")
+        self.main_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Add scrollbar
+        scrollbar = tk.Scrollbar(container, orient=tk.VERTICAL, command=self.main_canvas.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Configure canvas
+        self.main_canvas.configure(yscrollcommand=scrollbar.set)
+        self.main_canvas.bind('<Configure>', lambda e: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all")))
+        
+        # Create frame inside canvas
+        main_frame = tk.Frame(self.main_canvas, bg="#f0f0f0")
+        
+        # Add frame to canvas window
+        self.main_canvas.create_window((0, 0), window=main_frame, anchor="nw")
         
         # Title
         title_label = tk.Label(
@@ -102,11 +60,11 @@ class HandwritingRecognitionApp:
             font=("Arial", 24, "bold"),
             bg="#f0f0f0"
         )
-        title_label.pack(pady=(0, 20))
+        title_label.pack(pady=(20, 20), padx=20)
         
         # Canvas frame
         canvas_frame = tk.Frame(main_frame, bg="#f0f0f0")
-        canvas_frame.pack()
+        canvas_frame.pack(padx=20)
         
         # Drawing canvas
         self.canvas = tk.Canvas(
@@ -133,11 +91,11 @@ class HandwritingRecognitionApp:
             bg="#f0f0f0",
             fg="#666666"
         )
-        instructions.pack(pady=10)
+        instructions.pack(pady=10, padx=20)
         
         # Brush size control
         brush_frame = tk.Frame(main_frame, bg="#f0f0f0")
-        brush_frame.pack(pady=10)
+        brush_frame.pack(pady=10, padx=20)
         
         tk.Label(
             brush_frame,
@@ -160,7 +118,7 @@ class HandwritingRecognitionApp:
         
         # Buttons frame
         button_frame = tk.Frame(main_frame, bg="#f0f0f0")
-        button_frame.pack(pady=20)
+        button_frame.pack(pady=20, padx=20)
         
         # Predict button
         predict_btn = tk.Button(
@@ -194,7 +152,7 @@ class HandwritingRecognitionApp:
         
         # Result frame
         result_frame = tk.Frame(main_frame, bg="#f0f0f0")
-        result_frame.pack(pady=20)
+        result_frame.pack(pady=20, padx=20)
         
         tk.Label(
             result_frame,
@@ -223,7 +181,16 @@ class HandwritingRecognitionApp:
             bg="#f0f0f0",
             fg="#666666"
         )
-        self.confidence_label.pack()
+        self.confidence_label.pack(padx=20, pady=(0, 20))
+        
+        # Bind mouse wheel to scroll
+        def _on_mousewheel(event):
+            self.main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        self.main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        # For Linux
+        self.main_canvas.bind_all("<Button-4>", lambda e: self.main_canvas.yview_scroll(-1, "units"))
+        self.main_canvas.bind_all("<Button-5>", lambda e: self.main_canvas.yview_scroll(1, "units"))
     
     def update_brush_size(self, value):
         """Update brush size from slider"""
@@ -297,81 +264,31 @@ class HandwritingRecognitionApp:
         # Convert to numpy array and normalize
         image_array = np.array(image).astype(np.float32) / 255.0
         
-        # Return different shapes based on model type
-        if self.model_type == 'CNN':
-            # CNN expects (batch, height, width, channels)
-            return image_array.reshape(1, 28, 28, 1)
-        else:
-            # KNN expects flattened (batch, features)
-            return image_array.reshape(1, -1)
+        return image_array
     
+    def update_result(self, prediction_text, confidence_text):
+        """Update the result labels"""
+        self.result_label.config(text=prediction_text)
+        self.confidence_label.config(text=confidence_text)
+
     def predict(self):
-        """Make prediction on drawn image"""
-        if self.model is None:
-            messagebox.showerror("Error", "Model not loaded!")
-            return
-        
+        """Prepare image and call callback"""
         # Preprocess image
         processed_image = self.preprocess_image()
         
         if processed_image is None:
             messagebox.showwarning("Warning", "Please draw something first!")
             return
+            
+        # print("TEST", processed_image)
         
-        try:
-            if self.model_type == 'CNN':
-                # CNN model prediction
-                probabilities = self.model.predict(processed_image, verbose=0)[0]
-                prediction = np.argmax(probabilities)
-                confidence = probabilities[prediction] * 100
-                
-                # Get top 3 predictions
-                top_indices = np.argsort(probabilities)[-3:][::-1]
-                top_probs = probabilities[top_indices] * 100
-                
-                confidence_text = f"Confidence: {confidence:.1f}%\n"
-                confidence_text += f"Top 3: {top_indices[0]}({top_probs[0]:.1f}%), "
-                confidence_text += f"{top_indices[1]}({top_probs[1]:.1f}%), "
-                confidence_text += f"{top_indices[2]}({top_probs[2]:.1f}%)"
-                
-                self.confidence_label.config(text=confidence_text)
-                
-            else:
-                # KNN model prediction
-                prediction = self.model.predict(processed_image)[0]
-                
-                # Get prediction probabilities (for confidence)
-                if hasattr(self.model, 'predict_proba'):
-                    probabilities = self.model.predict_proba(processed_image)[0]
-                    confidence = max(probabilities) * 100
-                    
-                    # Get top 3 predictions
-                    top_indices = np.argsort(probabilities)[-3:][::-1]
-                    top_classes = [self.model.classes_[i] for i in top_indices]
-                    top_probs = [probabilities[i] * 100 for i in top_indices]
-                    
-                    confidence_text = f"Confidence: {confidence:.1f}%\n"
-                    confidence_text += f"Top 3: {top_classes[0]}({top_probs[0]:.1f}%), "
-                    confidence_text += f"{top_classes[1]}({top_probs[1]:.1f}%), "
-                    confidence_text += f"{top_classes[2]}({top_probs[2]:.1f}%)"
-                    
-                    self.confidence_label.config(text=confidence_text)
-                else:
-                    self.confidence_label.config(text="")
-            
-            # Display prediction
-            self.result_label.config(text=str(prediction))
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Prediction failed: {str(e)}")
+        if self.prediction_callback:
+            self.prediction_callback(processed_image)
+        else:
+            messagebox.showerror("Error", "No prediction callback registered!")
 
-
-def main():
-    """Main function to run the application"""
+if __name__ == "__main__":
+    # Test mode (no prediction)
     root = tk.Tk()
     app = HandwritingRecognitionApp(root)
     root.mainloop()
-
-
-if __name__ == "__main__":
-    main()
